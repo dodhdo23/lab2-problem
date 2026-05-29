@@ -34,9 +34,7 @@ class DropPath(nn.Module):
 class LinearClassifier(nn.Module):
     def __init__(self, in_channels: int = 3072, num_classes: int = 10):
         super().__init__()
-        # Fill this: define a linear classifier head.
-        # Hint: CIFAR-10 image input is flattened in forward().
-        raise NotImplementedError("Problem 1: implement LinearClassifier.__init__")
+        self.head = nn.Linear(in_channels, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x.reshape((x.shape[0], -1))
@@ -52,21 +50,22 @@ class MLPBlock(nn.Module):
         self.linear = nn.Linear(in_channels, hidden_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Fill this: apply Linear followed by ReLU.
-        raise NotImplementedError("Problem 2: implement MLPBlock.forward")
+        return F.relu(self.linear(x))
 
 
 class MLP(nn.Module):
     def __init__(self, in_channels: int = 3072, hidden_dim: int = 512, num_classes: int = 10):
         super().__init__()
-        # Fill this: build two hidden MLPBlock layers using nn.ModuleList.
-        raise NotImplementedError("Problem 2: implement MLP.__init__")
+        self.layers = nn.ModuleList([
+            MLPBlock(in_channels, hidden_dim),
+            MLPBlock(hidden_dim, hidden_dim),
+        ])
         self.head = nn.Linear(hidden_dim, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x.reshape((x.shape[0], -1))
-        # Fill this: pass x through all hidden layers before self.head.
-        raise NotImplementedError("Problem 2: implement MLP.forward")
+        for layer in self.layers:
+            x = layer(x)
         return self.head(x)
 
 
@@ -101,9 +100,20 @@ class ConvNetV1(nn.Module):
         if len(dims) != len(strides):
             raise ValueError("dims and strides must have the same length.")
 
-        # Fill this: build four ConvNetV1Block layers using nn.ModuleList.
-        # Requirements: 3x3 kernels, padding 1, channels from dims, strides from strides.
-        raise NotImplementedError("Problem 3: implement ConvNetV1.__init__")
+        self.layers = nn.ModuleList()
+        prev_dim = in_channels
+        for dim, stride in zip(dims, strides):
+            self.layers.append(
+                ConvNetV1Block(
+                    in_dim=prev_dim,
+                    dim=dim,
+                    kernel_size=3,
+                    stride=stride,
+                    padding=1,
+                )
+            )
+            prev_dim = dim
+
         self.head = nn.Linear(dims[-1], num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -137,8 +147,10 @@ class ConvNetV2Block(nn.Module):
     def __init__(self, dim: int, kernel_size: int = 3, droppath: float = 0.0):
         super().__init__()
         padding = (kernel_size - 1) // 2
-        # Fill this: define conv1/norm1/conv2/norm2 for a residual block.
-        raise NotImplementedError("Problem 4: implement ConvNetV2Block.__init__")
+        self.conv1 = nn.Conv2d(dim, dim, kernel_size=kernel_size, stride=1, padding=padding)
+        self.norm1 = nn.BatchNorm2d(dim)
+        self.conv2 = nn.Conv2d(dim, dim, kernel_size=kernel_size, stride=1, padding=padding)
+        self.norm2 = nn.BatchNorm2d(dim)
         self.droppath = DropPath(droppath) if droppath > 0 else nn.Identity()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -166,13 +178,32 @@ class ConvNetV2(nn.Module):
             raise ValueError("blocks, dims, and strides must have the same length.")
 
         self.downsamples = nn.ModuleList()
-        # Fill this: add one ConvNetV2DownsampleBlock per stage.
-        raise NotImplementedError("Problem 4: implement ConvNetV2 downsamples")
+        prev_dim = in_channels
+        for dim, stride in zip(dims, strides):
+            self.downsamples.append(
+                ConvNetV2DownsampleBlock(
+                    in_dim=prev_dim,
+                    dim=dim,
+                    kernel_size=2,
+                    stride=stride,
+                    padding=0,
+                )
+            )
+            prev_dim = dim
 
         self.layers = nn.ModuleList()
-        # Fill this: add the requested number of ConvNetV2Block layers per stage.
-        # Hint: use nn.Sequential for each stage and optionally vary droppath per block.
-        raise NotImplementedError("Problem 4: implement ConvNetV2 stages")
+        total_blocks = sum(blocks)
+        block_idx = 0
+        for num_blocks, dim in zip(blocks, dims):
+            stage_blocks = []
+            for _ in range(num_blocks):
+                if total_blocks > 1:
+                    block_droppath = float(droppath) * block_idx / (total_blocks - 1)
+                else:
+                    block_droppath = float(droppath)
+                stage_blocks.append(ConvNetV2Block(dim=dim, kernel_size=3, droppath=block_droppath))
+                block_idx += 1
+            self.layers.append(nn.Sequential(*stage_blocks))
 
         self.norm = nn.BatchNorm1d(dims[-1])
         self.dropout = nn.Dropout(dropout)

@@ -23,15 +23,22 @@ def build_transform(dataset_cfg: Dict, augment_cfg: Dict | None, train: bool) ->
     ops = []
 
     if train:
-        # Fill this: Problem 5 / Problem 6 augmentation before tensor conversion.
-        # Use configs such as:
-        #   augment.train.random_crop_padding
-        #   augment.train.horizontal_flip_prob
-        #   augment.train.randaugment.enabled
-        #   augment.train.randaugment.num_ops
-        #   augment.train.randaugment.magnitude
-        # Expected operations: RandomCrop, RandomHorizontalFlip, RandAugment.
-        pass
+        random_crop_padding = int(augment_cfg.get("random_crop_padding", 0))
+        if random_crop_padding > 0:
+            ops.append(v2.RandomCrop(size=32, padding=random_crop_padding))
+
+        horizontal_flip_prob = float(augment_cfg.get("horizontal_flip_prob", 0.0))
+        if horizontal_flip_prob > 0:
+            ops.append(v2.RandomHorizontalFlip(p=horizontal_flip_prob))
+
+        randaugment_cfg = augment_cfg.get("randaugment", {})
+        if bool(randaugment_cfg.get("enabled", False)):
+            ops.append(
+                v2.RandAugment(
+                    num_ops=int(randaugment_cfg.get("num_ops", 2)),
+                    magnitude=int(randaugment_cfg.get("magnitude", 5)),
+                )
+            )
 
     ops.extend([
         v2.PILToTensor(),
@@ -40,9 +47,9 @@ def build_transform(dataset_cfg: Dict, augment_cfg: Dict | None, train: bool) ->
     ])
 
     if train:
-        # Fill this: Problem 5 / Problem 6 random erasing after normalization.
-        # Use augment.train.random_erasing_prob from YAML.
-        pass
+        random_erasing_prob = float(augment_cfg.get("random_erasing_prob", 0.0))
+        if random_erasing_prob > 0:
+            ops.append(v2.RandomErasing(p=random_erasing_prob))
 
     return v2.Compose(ops)
 
